@@ -1,14 +1,8 @@
-import os
-import sys
-
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
 import torch
 import torch.nn.functional as F
 from torch.fx import GraphModule, subgraph_rewriter
 
 from backend import BackendClass
-
 
 # Pretend that this is an optimized back2back gemm kernel
 @torch.library.custom_op("custom_op::gemm_gemm", mutates_args=())
