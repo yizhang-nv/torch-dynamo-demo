@@ -1,14 +1,14 @@
 # Replace Pattern Issues
 
-This folder contains several minimum reproduce code to demonstrate the obstacle we've encontered when using `replace_pattern` to do the high level graph rewriting.
+This folder contains several minimum reproduce codes to demonstrate the obstacle we've encountered when using `replace_pattern` to do the high-level graph rewriting. 
 
 ## Replace Module
 
-We've found that for either pytorch built-in module and custom module, we cannot easily match and rewrite them. This is crucial since we sometimes want to fuse multiple modules into one custom op, and it would be nice if `replace_pattern` could support it. 
+We've found that for either pytorch built-in module or the custom module, we cannot easily match and rewrite them. This is crucial since we sometimes want to fuse multiple modules into one custom op, and it would be nice if `replace_pattern` could support it. 
 
 ### Built-in Module
 
-For built-in module, it seems that we cannot directly match it. Example code: [replace_builtin_module.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/replace_builtin_module.py?ref_type=heads). 
+For the built-in module, it seems that we cannot directly match it. Example code: [replace_builtin_module.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/replace_builtin_module.py?ref_type=heads). 
 
 Ref: https://discuss.pytorch.org/t/torch-fx-replace-modules/116315, https://discuss.pytorch.org/t/replace-pattern-for-nn-modules/123399
 
@@ -16,18 +16,18 @@ And we've found that kernl hacked the `replace_pattern` themselves to achieve it
 
 ### Custom Module
 
-For custom module, it seems that `replace_pattern` itself cannot register the module's parameters since it cannot handle the character `.` in the parameter's name. Example code: [replace_custom_module.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/replace_custom_module.py?ref_type=heads)
+For the custom module, it seems that `replace_pattern` itself cannot register the module's parameters since it cannot handle the character `.` in the parameter's name. Example code: [replace_custom_module.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/replace_custom_module.py?ref_type=heads)
 
 ```
 torch._dynamo.exc.BackendCompilerFailed: backend='<backend.BackendClass object at 0x7f1429ea4820>' raised:
 KeyError: 'parameter name can\'t contain "."'
 ```
 
-The root cause maybe torch currently does not have a mapping system to map the parameters in the target pattern to the source pattern so that the rewrote graph cannot get the correct parameter in the original graph. So emitting such error is a reasonable way. 
+The root cause may be torch currently does not have a mapping system to map the parameters in the target pattern to the source pattern so that the rewrote graph cannot get the correct parameter in the original graph. So emitting such error is a reasonable way. 
 
 ### WAR
 
-There is an workaround for the above issue: change module's forward to a stateless function. Example code: [replace_module_war.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/replace_module_war.py?ref_type=heads)
+There is a workaround for the above issue: change the module's forward to a stateless function. Example code: [replace_module_war.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/replace_module_war.py?ref_type=heads)
 
 ```python
 class CustomLinearModule(torch.nn.Module):
@@ -165,15 +165,32 @@ call_method    to_2       to                           (add, getattr_1)    {} # 
 output         output     output                       (to_2,)             {}
 ```
 
-Given the callable with the same code, it makes us wonder how to get the dynamo version of specialized fx graph ourselves to do the correct pattern matching? Since with custom backend, we can get example inputs, so in thereory we can get the specialized graph. 
+Given the callable with the same code, it makes us wonder how to get the dynamo version of the specialized fx graph ourselves to do the correct pattern matching. Since with a custom backend, we can get example inputs, in theory, we can get the specialized graph. 
 
 Tracing the graph with concrete args sometimes over-specialize the graph. 
+
+## Graph Isomorphism
+
+We've found that torch somethings cannot match the pattern even the two graph are isomorphic. Example code: [a+b.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/a+b.py?ref_type=heads)
+
+The following pattern is quite common in transformer:
+
+```
+def func(x, y):
+    x = x * x # Some module like mha
+    x = x + y # residual add
+    x = x * x # Some module like ln
+    return x
+```
+
+However, changing the residual add from `x + y` to `y + x` would lead to pattern matching failure. Although the graph isomorphism is a big topic for dl compiler, we hope that there is still some sort of intelligence for this common case. 
 
 ## Misc & Usability
 
 The development experience of `replace_pattern` is not ideal. 
 
-1. Hard to get the fx graph traced by `replace_pattern`. 
-2. No log for the matching process. Could only try from small graph to see which part of the pattern breaks the matching.
+1. Hard to get the fx graph traced by `replace_pattern`. We have to trace it ourselves to get more control of it.
+2. As listed above, currently there is no API to produce an identical fx graph to the graph produced by `torch.dynamo`. Is it possible to provide some APIs that could produce fx.graph that is close to the `torch.dynamo`?
+3. No log for the matching process. Could only try from a small graph to see which part of the pattern breaks the matching.
 
 Also, is the fx graph traced by torch.fx/torch.dynamo version sensitive? (i.e. same python code would produce same fx graph across different pytorch versions)

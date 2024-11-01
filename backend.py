@@ -2,7 +2,6 @@ import time
 from functools import wraps
 from typing import Callable, List
 
-import tensorrt_llm
 import torch
 from torch._subclasses import FakeTensor
 from torch.fx import GraphModule
@@ -76,44 +75,42 @@ class BackendClass:
     def __call__(self, gm: GraphModule, example_inputs: List[torch.Tensor]) -> callable:
         print("my_compiler() called with FX graph:")
         self.call_count += 1
-        rank = tensorrt_llm.mpi_rank()
-        if rank == 0:
-            gm.graph.print_tabular()
+        gm.graph.print_tabular()
 
-            def contains_sym_int(shape):
-                return any(isinstance(dim, torch.SymInt) for dim in shape)
+        def contains_sym_int(shape):
+            return any(isinstance(dim, torch.SymInt) for dim in shape)
 
-            for node in gm.graph.nodes:
-                print(node, node.op)
-                if node.op != "output":
-                    if "example_value" in node.meta:
-                        tensor = node.meta["example_value"]
-                    else:
-                        print(node.meta)
-                        continue
+        for node in gm.graph.nodes:
+            print(node, node.op)
+            if node.op != "output":
+                if "example_value" in node.meta:
+                    tensor = node.meta["example_value"]
+                else:
+                    print(node.meta)
+                    continue
 
-                    if isinstance(tensor, FakeTensor) and contains_sym_int(
-                        tensor.shape
-                    ):
-                        print(f"Dynamic shape detected for {node}.")
+                if isinstance(tensor, FakeTensor) and contains_sym_int(
+                    tensor.shape
+                ):
+                    print(f"Dynamic shape detected for {node}.")
 
-                        for idx, i in enumerate(tensor.shape):
-                            print(f"Dim {idx} ", end="")
-                            if isinstance(i, torch.SymInt):
-                                node = i.node
-                                expr = node.expr
-                                shape_env: ShapeEnv = node.shape_env
-                                var_range = shape_env.var_to_range.get(
-                                    expr, None
-                                ) or shape_env.bound_sympy(expr)
-                                var_val = shape_env.var_to_val.get(
-                                    expr, None
-                                ) or expr.xreplace(shape_env.var_to_val)
-                                print(
-                                    f"(Dynamic): min {var_range.lower} opt {var_val} max {var_range.upper}"
-                                )
-                            else:
-                                print(f"(Static): {i}")
+                    for idx, i in enumerate(tensor.shape):
+                        print(f"Dim {idx} ", end="")
+                        if isinstance(i, torch.SymInt):
+                            node = i.node
+                            expr = node.expr
+                            shape_env: ShapeEnv = node.shape_env
+                            var_range = shape_env.var_to_range.get(
+                                expr, None
+                            ) or shape_env.bound_sympy(expr)
+                            var_val = shape_env.var_to_val.get(
+                                expr, None
+                            ) or expr.xreplace(shape_env.var_to_val)
+                            print(
+                                f"(Dynamic): min {var_range.lower} opt {var_val} max {var_range.upper}"
+                            )
+                        else:
+                            print(f"(Static): {i}")
 
         backend_compiled = self.optimize_fn(gm, example_inputs)
 
