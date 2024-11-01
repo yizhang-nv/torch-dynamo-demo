@@ -65,13 +65,13 @@ def source_pattern(x, l0_weight, l1_weight):
     )
 ```
 
-However, this would require developers to rewrite all their modules to make it compatible with `replace_pattern`. Such constrain would be a burden for us to match custom modules that are not written in this way. 
+However, this would require developers to rewrite all their modules to make them compatible with `replace_pattern`. Such constraints would be a burden for us to match custom modules that are not written in this way. 
 
-Is there a better way to match both built-in module and custom module with `replace_pattern`?
+Is there a better way to match both the built-in module and the custom module with `replace_pattern`?
 
 ## Dead code in Pattern Input
 
-This is a known issue for pytorch: https://github.com/pytorch/pytorch/issues/100419. However, this could be a problem if we pass in custom object as arguments to config the network. Example code: [dead_code.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/dead_code.py?ref_type=heads)
+This is a known issue for pytorch: https://github.com/pytorch/pytorch/issues/100419. However, this could be a problem if we pass in custom objects as arguments to configure the network. Example code: [dead_code.py](https://github.com/yizhang-nv/torch-dynamo-demo/blob/main/dead_code.py?ref_type=heads)
 
 ```python
 class CustomModel(torch.nn.Module):
@@ -107,9 +107,9 @@ def source_pattern(x, config: Config, proj, down_proj):
     return CustomModel.forward_pattern(x, config, proj, down_proj)
 ```
 
-Say we have a `source_pattern` that has control flow that using input as condition. We can partially specialize the pattern with `source_pattern_fx = symbolic_trace(source_pattern, concrete_args={"config":Config(True, 1)})`. However, `replace_pattern` would complain that there is dead code in the source pattern since the graph is specialized and no one would use `config` anymore. 
+Say we have a `source_pattern` that has a control flow that uses input as the condition. We can partially specialize the pattern with `source_pattern_fx = symbolic_trace(source_pattern, concrete_args={"config":Config(True, 1)})`. However, `replace_pattern` would complain that there is dead code in the source pattern since the graph is specialized and no one would use `config` anymore. 
 
-Of course we can move config into `source_pattern`, and specialize it there rather than using concrete args. 
+Of course, we can move config into `source_pattern`, and specialize it there rather than using concrete args. 
 
 ```python
 def source_pattern(x, proj, down_proj):
@@ -117,9 +117,11 @@ def source_pattern(x, proj, down_proj):
     return CustomModel.forward_pattern(x, config, proj, down_proj)
 ```
 
-However, it would require us to write multiple source pattern code for multiple configuration. If `replace_pattern` can allow dead code in input, then we would only maintain one source pattern code and specialize it with different input args. 
+However, it would require us to write multiple source pattern codes for multiple configurations. 
 
-One major concern for allowing the dead code in input would be that target pattern may use the unused input. We can add dead code detection for the target pattern as well. If target pattern doesn't use the dead input, then everything should be fine. 
+If `replace_pattern` can allow dead code in input, then we would only maintain one source pattern code and specialize it with different input args. Also, it would make us manage the optimization pass easier.
+
+One major concern for allowing the dead code in input would be that the target pattern may use the unused input. We can add dead code detection for the target pattern as well. If the target pattern doesn't use the dead input, then everything should be fine. 
 
 ## Hard to Specialize with Input
 
